@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="description" content="Nebula — an interactive generative physics playground. Built in one shot by Grok 4.5." />
+  <meta name="theme-color" content="#05050f" />
+  <title>Nebula — Generative Physics Playground</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <canvas id="canvas" aria-label="Interactive particle canvas"></canvas>
+
+    <!-- Ambient glow layers -->
+    <div class="glow glow-a" aria-hidden="true"></div>
+    <div class="glow glow-b" aria-hidden="true"></div>
+
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <span class="orbit"></span>
+          <span class="core"></span>
+        </div>
+        <div class="brand-text">
+          <h1>Nebula</h1>
+          <p>generative physics playground</p>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <button type="button" class="icon-btn" id="btn-sound" title="Toggle ambient tone (T)" aria-pressed="false">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+            <path d="M11 5L6 9H3v6h3l5 4V5z" />
+            <path class="sound-waves" d="M15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13" />
+          </svg>
+        </button>
+        <button type="button" class="icon-btn" id="btn-fullscreen" title="Fullscreen (F)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+            <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />
+          </svg>
+        </button>
+        <button type="button" class="icon-btn" id="btn-help" title="Help (?)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+        </button>
+        <button type="button" class="btn-primary" id="btn-export" title="Export PNG (E)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
+          </svg>
+          Export
+        </button>
+      </div>
+    </header>
+
+    <!-- Left panel: modes + palette -->
+    <aside class="panel panel-left" id="panel-left">
+      <section class="panel-section">
+        <h2>Force Mode</h2>
+        <div class="mode-grid" role="radiogroup" aria-label="Force mode">
+          <button type="button" class="mode-card active" data-mode="attract" role="radio" aria-checked="true">
+            <span class="mode-icon">◉</span>
+            <span class="mode-name">Attract</span>
+            <span class="mode-key">1</span>
+          </button>
+          <button type="button" class="mode-card" data-mode="repel" role="radio" aria-checked="false">
+            <span class="mode-icon">◎</span>
+            <span class="mode-name">Repel</span>
+            <span class="mode-key">2</span>
+          </button>
+          <button type="button" class="mode-card" data-mode="orbit" role="radio" aria-checked="false">
+            <span class="mode-icon">◌</span>
+            <span class="mode-name">Orbit</span>
+            <span class="mode-key">3</span>
+          </button>
+          <button type="button" class="mode-card" data-mode="vortex" role="radio" aria-checked="false">
+            <span class="mode-icon">◍</span>
+            <span class="mode-name">Vortex</span>
+            <span class="mode-key">4</span>
+          </button>
+          <button type="button" class="mode-card" data-mode="constellation" role="radio" aria-checked="false">
+            <span class="mode-icon">✦</span>
+            <span class="mode-name">Stars</span>
+            <span class="mode-key">5</span>
+          </button>
+          <button type="button" class="mode-card" data-mode="paint" role="radio" aria-checked="false">
+            <span class="mode-icon">◆</span>
+            <span class="mode-name">Paint</span>
+            <span class="mode-key">6</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="panel-section">
+        <h2>Palette</h2>
+        <div class="palette-row" id="palette-row">
+          <button type="button" class="swatch active" data-palette="aurora" style="--c1:#5eead4;--c2:#a78bfa;--c3:#f472b6" title="Aurora"></button>
+          <button type="button" class="swatch" data-palette="ember" style="--c1:#fbbf24;--c2:#f97316;--c3:#ef4444" title="Ember"></button>
+          <button type="button" class="swatch" data-palette="ocean" style="--c1:#22d3ee;--c2:#3b82f6;--c3:#6366f1" title="Ocean"></button>
+          <button type="button" class="swatch" data-palette="mint" style="--c1:#4ade80;--c2:#2dd4bf;--c3:#38bdf8" title="Mint"></button>
+          <button type="button" class="swatch" data-palette="mono" style="--c1:#f8fafc;--c2:#94a3b8;--c3:#64748b" title="Mono"></button>
+          <button type="button" class="swatch" data-palette="neon" style="--c1:#f0abfc;--c2:#22d3ee;--c3:#a3e635" title="Neon"></button>
+        </div>
+      </section>
+
+      <section class="panel-section">
+        <h2>Presets</h2>
+        <div class="preset-list">
+          <button type="button" class="preset-btn" data-preset="bigbang">Big Bang</button>
+          <button type="button" class="preset-btn" data-preset="galaxy">Galaxy</button>
+          <button type="button" class="preset-btn" data-preset="rain">Meteor Rain</button>
+          <button type="button" class="preset-btn" data-preset="calm">Still Pond</button>
+        </div>
+      </section>
+    </aside>
+
+    <!-- Right panel: sliders + stats -->
+    <aside class="panel panel-right" id="panel-right">
+      <section class="panel-section">
+        <h2>Parameters</h2>
+        <label class="slider-row">
+          <div class="slider-meta">
+            <span>Particle count</span>
+            <span class="slider-val" id="val-count">1200</span>
+          </div>
+          <input type="range" id="ctrl-count" min="200" max="4000" step="100" value="1200" />
+        </label>
+        <label class="slider-row">
+          <div class="slider-meta">
+            <span>Force strength</span>
+            <span class="slider-val" id="val-force">1.0</span>
+          </div>
+          <input type="range" id="ctrl-force" min="0.1" max="3" step="0.1" value="1" />
+        </label>
+        <label class="slider-row">
+          <div class="slider-meta">
+            <span>Trail fade</span>
+            <span class="slider-val" id="val-trail">0.08</span>
+          </div>
+          <input type="range" id="ctrl-trail" min="0.02" max="0.4" step="0.01" value="0.08" />
+        </label>
+        <label class="slider-row">
+          <div class="slider-meta">
+            <span>Particle size</span>
+            <span class="slider-val" id="val-size">1.6</span>
+          </div>
+          <input type="range" id="ctrl-size" min="0.5" max="4" step="0.1" value="1.6" />
+        </label>
+        <label class="slider-row">
+          <div class="slider-meta">
+            <span>Friction</span>
+            <span class="slider-val" id="val-friction">0.985</span>
+          </div>
+          <input type="range" id="ctrl-friction" min="0.90" max="0.999" step="0.001" value="0.985" />
+        </label>
+      </section>
+
+      <section class="panel-section">
+        <h2>Toggles</h2>
+        <label class="toggle-row">
+          <span>Connect nearby</span>
+          <input type="checkbox" id="ctrl-links" checked />
+          <span class="toggle-ui"></span>
+        </label>
+        <label class="toggle-row">
+          <span>Bloom glow</span>
+          <input type="checkbox" id="ctrl-bloom" checked />
+          <span class="toggle-ui"></span>
+        </label>
+        <label class="toggle-row">
+          <span>Mouse cursor field</span>
+          <input type="checkbox" id="ctrl-cursor" checked />
+          <span class="toggle-ui"></span>
+        </label>
+        <label class="toggle-row">
+          <span>Auto-drift</span>
+          <input type="checkbox" id="ctrl-drift" />
+          <span class="toggle-ui"></span>
+        </label>
+      </section>
+
+      <section class="panel-section stats-section">
+        <h2>Live Stats</h2>
+        <div class="stats">
+          <div class="stat">
+            <span class="stat-label">FPS</span>
+            <span class="stat-value" id="stat-fps">—</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Particles</span>
+            <span class="stat-value" id="stat-particles">1200</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Links</span>
+            <span class="stat-value" id="stat-links">0</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Mode</span>
+            <span class="stat-value" id="stat-mode">attract</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="panel-footer">
+        <button type="button" class="btn-ghost" id="btn-reset">Reset field</button>
+        <button type="button" class="btn-ghost danger" id="btn-clear">Clear trails</button>
+      </div>
+    </aside>
+
+    <!-- Bottom HUD -->
+    <footer class="hud">
+      <div class="hud-hint" id="hud-hint">
+        <kbd>Click</kbd> / <kbd>Drag</kbd> to shape the field ·
+        <kbd>Space</kbd> pause ·
+        <kbd>R</kbd> reset ·
+        <kbd>?</kbd> help
+      </div>
+      <div class="hud-seed">
+        seed <span id="seed-display">—</span>
+        <button type="button" class="seed-btn" id="btn-reseed" title="New seed (N)">↻</button>
+      </div>
+    </footer>
+
+    <!-- Pause overlay -->
+    <div class="overlay" id="pause-overlay" hidden>
+      <div class="overlay-card">
+        <h2>Paused</h2>
+        <p>Press <kbd>Space</kbd> to resume</p>
+      </div>
+    </div>
+
+    <!-- Help modal -->
+    <div class="modal" id="help-modal" hidden>
+      <div class="modal-backdrop" data-close-help></div>
+      <div class="modal-card" role="dialog" aria-labelledby="help-title">
+        <header class="modal-head">
+          <h2 id="help-title">How to play with space</h2>
+          <button type="button" class="icon-btn" data-close-help aria-label="Close">✕</button>
+        </header>
+        <div class="modal-body">
+          <p class="lede">Nebula is a real-time particle physics sandbox. Your cursor is a force field. Everything else is juice.</p>
+          <div class="help-grid">
+            <div>
+              <h3>Mouse / Touch</h3>
+              <ul>
+                <li><strong>Move</strong> — field follows you</li>
+                <li><strong>Click / hold</strong> — stronger force</li>
+                <li><strong>Drag</strong> — paint velocity into the void</li>
+              </ul>
+            </div>
+            <div>
+              <h3>Keyboard</h3>
+              <ul>
+                <li><kbd>1</kbd>–<kbd>6</kbd> modes</li>
+                <li><kbd>Space</kbd> pause</li>
+                <li><kbd>R</kbd> reset particles</li>
+                <li><kbd>C</kbd> clear trails</li>
+                <li><kbd>N</kbd> new seed</li>
+                <li><kbd>E</kbd> export PNG</li>
+                <li><kbd>T</kbd> ambient tone</li>
+                <li><kbd>F</kbd> fullscreen</li>
+                <li><kbd>H</kbd> / <kbd>?</kbd> this help</li>
+                <li><kbd>[</kbd> <kbd>]</kbd> toggle panels</li>
+              </ul>
+            </div>
+          </div>
+          <p class="credit">Built in one shot by <strong>Grok 4.5</strong> · free-tier friendly · zero build step · open <code>index.html</code></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <!-- First-run splash -->
+    <div class="splash" id="splash">
+      <div class="splash-inner">
+        <div class="brand-mark lg" aria-hidden="true">
+          <span class="orbit"></span>
+          <span class="core"></span>
+        </div>
+        <h1>Nebula</h1>
+        <p>Move your cursor. Shape a universe.</p>
+        <button type="button" class="btn-primary lg" id="btn-start">Enter the field</button>
+        <button type="button" class="linkish" id="btn-help-splash">Keyboard shortcuts</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
