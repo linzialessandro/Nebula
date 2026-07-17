@@ -1,67 +1,134 @@
 # Nebula
 
-**An interactive generative physics playground** — built in one shot by **Grok 4.5**.
+**A generative physics playground in pure HTML, CSS, and JavaScript.**
 
-No install. No build step. No API keys. Open `index.html` and shape a universe with your cursor.
+Push particles with forces. Then bend the space they live in. Share the experiment you invent.
 
-![Free-tier friendly · zero dependencies · pure HTML/CSS/JS]
+[![License: MIT](https://img.shields.io/badge/License-MIT-a78bfa.svg)](./LICENSE)
+[![No build](https://img.shields.io/badge/build-none-5eead4.svg)](#quick-start)
+[![Dependencies](https://img.shields.io/badge/dependencies-0-22d3ee.svg)](#files)
+
+---
 
 ## Quick start
 
 ```bash
-# Option A — just open it
+# Option A — open the file
 open index.html
 
-# Option B — local server (optional)
+# Option B — local static server
 python3 -m http.server 8765
-# then visit http://localhost:8765
+# → http://localhost:8765
 ```
+
+No install. No bundler. No API keys.
+
+---
 
 ## What it is
 
-A real-time particle field with:
+Nebula is a real-time particle field with **two orthogonal interaction layers**:
 
-| Feature | Details |
-|--------|---------|
-| **6 force modes** | Attract, Repel, Orbit, Vortex, Stars (constellation), Paint |
-| **6 palettes** | Aurora, Ember, Ocean, Mint, Mono, Neon |
-| **Presets** | Big Bang, Galaxy, Meteor Rain, Still Pond |
-| **Live parameters** | Count (200–4000), force, trail fade, size, friction |
-| **Juice** | Bloom glow, neighbor links, spatial hash, FPS meter |
-| **Audio** | Optional procedural ambient tone (Web Audio) |
-| **Export** | PNG snapshot with seed watermark |
-| **Seeds** | Deterministic layouts via mulberry32 PRNG |
+| Layer | Role |
+|-------|------|
+| **Force** | The cursor is a force field — attract, repel, orbit, vortex, stars, paint |
+| **Geometry** | You edit the *metric* of space — wells and painted hills/valleys. Free particles curve even with the cursor field off |
+
+### Highlights
+
+- **Living metric** — rubber-sheet wells, paint, erase, metric grid, optical depth
+- **Geometry presets** — Rubber Sheet, Binary Lens, Saddle, Gravity Wave, Horizon Garden
+- **Discovery coach** — short first-run walkthrough (skippable; remembered via `localStorage`)
+- **Shareable experiments** — copy a link encoding seed, wells, and key parameters
+- **Juice** — palettes, bloom, neighbor links, optional ambient audio, PNG export
+- **Seeds** — deterministic layouts (`mulberry32`)
+
+### Science note
+
+Geometry is a **2D rubber-sheet / surface analogy**, not a numerical relativity solver. Neighbor links stay Euclidean for performance. The goal is discovery: turn off the cursor field, place a well, and watch trails draw free-fall curves.
+
+---
 
 ## Controls
 
 | Input | Action |
 |-------|--------|
-| Move cursor | Shape the force field |
-| Click / hold | Stronger force |
-| `1`–`6` | Switch modes |
+| Move cursor | Shape the force field (Force layer) |
+| Click / hold | Stronger force, or place / paint geometry |
+| `G` | Toggle **Force** / **Geometry** layer |
+| `1`–`6` | Force modes |
+| `7`–`0` | Geometry tools (well · valleys · hills · erase) |
+| `Shift`+click (Well tool) | Place a hill (negative mass) |
+| `M` | Toggle metric grid |
+| `X` | Clear geometry |
+| Share (toolbar) | Copy experiment link |
 | `Space` | Pause |
-| `R` | Reset particles |
+| `R` | Reset particles (geometry kept) |
 | `C` | Clear trails |
 | `N` | New seed |
 | `E` | Export PNG |
-| `T` | Toggle ambient tone |
+| `T` | Ambient tone |
 | `F` | Fullscreen |
 | `H` / `?` | Help |
 | `[` / `]` | Toggle side panels |
 
-## Why this exists
+**Try this:** on the splash screen, choose **Run Rubber Sheet experiment**, or enter the field and follow the three-step coach.
 
-A free-tier showcase for Grok 4.5: one session, finished software, polished UI, real physics, zero tooling friction. Open the file. Play.
+---
+
+## Share format
+
+Experiment links use the URL hash (no backend):
+
+```text
+index.html#s=SEED&m=orbit&g=w:0.50,0.50,1.5,120&p=f:0.996,c:0,t:0.08,pal:aurora,gs:1,sg:0.75,n:1200
+```
+
+| Key | Meaning |
+|-----|---------|
+| `s` | Seed |
+| `m` | Force mode |
+| `g` | Wells as `w:nx,ny,mass,radius` (normalized 0–1 positions) |
+| `p` | Params: friction, cursor on/off, trail, palette, geometry strength, surface G, count |
+
+Paint is not encoded in share links yet. Wells cover most “look what I found” moments.
+
+---
 
 ## Files
 
+```text
+index.html   App shell, panels, discovery coach, help
+styles.css   Glass UI, layout, responsive panels
+app.js       Particle engine, living metric, share links, audio
+LICENSE      MIT
+README.md    This file
 ```
-index.html   structure + accessibility hooks
-styles.css   glass UI, responsive panels, motion
-app.js       particle engine, spatial hash, audio, export
-README.md    you are here
-```
+
+---
+
+## Browser support
+
+Modern evergreen browsers (Chrome, Firefox, Safari, Edge). Requires Canvas 2D and ES2015+ JavaScript. Touch works for mobile; the densest panels are happiest on a tablet or desktop.
+
+---
+
+## Contributing
+
+Issues and pull requests are welcome.
+
+1. Keep the **zero-dependency / no-build** constraint unless there is a strong reason to change it.
+2. Prefer small, focused changes with a clear playtest path.
+3. Match the existing style: vanilla JS IIFE, typed arrays for particles, glass UI.
+
+---
+
+## Provenance
+
+Started as a Grok 4.5 generative demo; evolved into a dual-layer physics playground (forces + living metric) with discovery and sharing.
+
+---
 
 ## License
 
-MIT — do whatever you want with it.
+[MIT](./LICENSE) — use it, fork it, bend space with it.

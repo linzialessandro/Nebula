@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="description" content="Nebula — an interactive generative physics playground. Built in one shot by Grok 4.5." />
+  <meta name="description" content="Nebula — generative physics playground. Push particles with forces, bend space with a living metric, and share your experiment." />
   <meta name="theme-color" content="#05050f" />
   <title>Nebula — Generative Physics Playground</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -49,6 +49,14 @@
             <circle cx="12" cy="12" r="10"></circle>
             <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
             <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+        </button>
+        <button type="button" class="icon-btn" id="btn-share" title="Copy experiment link" aria-label="Copy experiment link">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="18" cy="5" r="3" />
+            <circle cx="6" cy="12" r="3" />
+            <circle cx="18" cy="19" r="3" />
+            <path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98" />
           </svg>
         </button>
         <button type="button" class="btn-primary" id="btn-export" title="Export PNG (E)">
@@ -118,6 +126,107 @@
           <button type="button" class="preset-btn" data-preset="rain">Meteor Rain</button>
           <button type="button" class="preset-btn" data-preset="calm">Still Pond</button>
         </div>
+      </section>
+
+      <section class="panel-section geo-section">
+        <h2>Space Geometry</h2>
+        <p class="section-lede">Bend the surface particles live on. Free motion curves even with the cursor field off.</p>
+        <div class="layer-toggle" role="tablist" aria-label="Interaction layer">
+          <button type="button" class="layer-btn active" data-layer="force" role="tab" aria-selected="true">Force</button>
+          <button type="button" class="layer-btn" data-layer="geometry" role="tab" aria-selected="false">Geometry</button>
+        </div>
+        <button type="button" class="btn-discover" id="btn-rubber-sheet" title="Classic free-fall on a curved sheet">
+          ▶ Run Rubber Sheet
+        </button>
+        <div class="geo-tools" id="geo-tools">
+          <button type="button" class="geo-tool-btn active" data-geotool="well" title="Place gravity well (7)">
+            <span class="mode-icon">⊛</span>
+            <span class="mode-name">Well</span>
+            <span class="mode-key">7</span>
+          </button>
+          <button type="button" class="geo-tool-btn" data-geotool="paint-down" title="Paint valleys (8)">
+            <span class="mode-icon">▽</span>
+            <span class="mode-name">Valleys</span>
+            <span class="mode-key">8</span>
+          </button>
+          <button type="button" class="geo-tool-btn" data-geotool="paint-up" title="Paint hills (9)">
+            <span class="mode-icon">△</span>
+            <span class="mode-name">Hills</span>
+            <span class="mode-key">9</span>
+          </button>
+          <button type="button" class="geo-tool-btn" data-geotool="erase" title="Erase geometry (0)">
+            <span class="mode-icon">◇</span>
+            <span class="mode-name">Erase</span>
+            <span class="mode-key">0</span>
+          </button>
+        </div>
+        <label class="slider-row">
+          <div class="slider-meta">
+            <span>Well mass</span>
+            <span class="slider-val" id="val-well-mass">1.0</span>
+          </div>
+          <input type="range" id="ctrl-well-mass" min="0.2" max="4" step="0.1" value="1" />
+        </label>
+        <label class="slider-row">
+          <div class="slider-meta">
+            <span>Well radius</span>
+            <span class="slider-val" id="val-well-radius">90</span>
+          </div>
+          <input type="range" id="ctrl-well-radius" min="30" max="200" step="5" value="90" />
+        </label>
+        <label class="slider-row">
+          <div class="slider-meta">
+            <span>Brush size</span>
+            <span class="slider-val" id="val-brush-radius">48</span>
+          </div>
+          <input type="range" id="ctrl-brush-radius" min="16" max="120" step="4" value="48" />
+        </label>
+        <label class="toggle-row">
+          <span>Show metric grid</span>
+          <input type="checkbox" id="ctrl-show-grid" checked />
+          <span class="toggle-ui"></span>
+        </label>
+        <label class="toggle-row">
+          <span>Geometry enabled</span>
+          <input type="checkbox" id="ctrl-geo-enabled" checked />
+          <span class="toggle-ui"></span>
+        </label>
+        <details class="geo-advanced">
+          <summary>Advanced geometry</summary>
+          <label class="slider-row">
+            <div class="slider-meta">
+              <span>Curvature strength</span>
+              <span class="slider-val" id="val-geo-strength">1.0</span>
+            </div>
+            <input type="range" id="ctrl-geo-strength" min="0" max="3" step="0.1" value="1" />
+          </label>
+          <label class="slider-row">
+            <div class="slider-meta">
+              <span>Surface gravity</span>
+              <span class="slider-val" id="val-surface-g">0.75</span>
+            </div>
+            <input type="range" id="ctrl-surface-g" min="0" max="2" step="0.05" value="0.75" />
+          </label>
+          <label class="slider-row">
+            <div class="slider-meta">
+              <span>Optical depth</span>
+              <span class="slider-val" id="val-optical-depth">0.35</span>
+            </div>
+            <input type="range" id="ctrl-optical-depth" min="0" max="1.5" step="0.05" value="0.35" />
+          </label>
+        </details>
+      </section>
+
+      <section class="panel-section">
+        <h2>Geometry Presets</h2>
+        <div class="preset-list">
+          <button type="button" class="preset-btn geo-preset-btn primary-preset" data-geopreset="rubber-sheet">Rubber Sheet</button>
+          <button type="button" class="preset-btn geo-preset-btn" data-geopreset="binary-lens">Binary Lens</button>
+          <button type="button" class="preset-btn geo-preset-btn" data-geopreset="saddle">Saddle</button>
+          <button type="button" class="preset-btn geo-preset-btn" data-geopreset="gravity-wave">Gravity Wave</button>
+          <button type="button" class="preset-btn geo-preset-btn" data-geopreset="horizon-garden">Horizon Garden</button>
+        </div>
+        <button type="button" class="btn-ghost danger geo-clear-btn" id="btn-clear-geo" style="margin-top:8px;width:100%">Clear geometry</button>
       </section>
     </aside>
 
@@ -209,7 +318,8 @@
       </section>
 
       <div class="panel-footer">
-        <button type="button" class="btn-ghost" id="btn-reset">Reset field</button>
+        <button type="button" class="btn-ghost" id="btn-reset" title="Rescatter particles only">Reset particles</button>
+        <button type="button" class="btn-ghost" id="btn-reset-universe" title="Particles + geometry">Reset universe</button>
         <button type="button" class="btn-ghost danger" id="btn-clear">Clear trails</button>
       </div>
     </aside>
@@ -217,9 +327,9 @@
     <!-- Bottom HUD -->
     <footer class="hud">
       <div class="hud-hint" id="hud-hint">
-        <kbd>Click</kbd> / <kbd>Drag</kbd> to shape the field ·
+        <kbd>G</kbd> force / geometry ·
+        <kbd>Click</kbd> sculpt ·
         <kbd>Space</kbd> pause ·
-        <kbd>R</kbd> reset ·
         <kbd>?</kbd> help
       </div>
       <div class="hud-seed">
@@ -245,7 +355,7 @@
           <button type="button" class="icon-btn" data-close-help aria-label="Close">✕</button>
         </header>
         <div class="modal-body">
-          <p class="lede">Nebula is a real-time particle physics sandbox. Your cursor is a force field. Everything else is juice.</p>
+          <p class="lede">Nebula has two ways to play with a universe. <strong>Force modes</strong> let your cursor push particles. <strong>Space geometry</strong> lets you bend the surface they live on — the rubber-sheet idea from general relativity. Turn off the cursor field, drop a well, and watch free particles draw geodesics with their trails.</p>
           <div class="help-grid">
             <div>
               <h3>Mouse / Touch</h3>
@@ -253,25 +363,39 @@
                 <li><strong>Move</strong> — field follows you</li>
                 <li><strong>Click / hold</strong> — stronger force</li>
                 <li><strong>Drag</strong> — paint velocity into the void</li>
+                <li><strong>Shift+click</strong> — place hill (negative well)</li>
               </ul>
             </div>
             <div>
               <h3>Keyboard</h3>
               <ul>
-                <li><kbd>1</kbd>–<kbd>6</kbd> modes</li>
+                <li><kbd>1</kbd>–<kbd>6</kbd> force modes</li>
+                <li><kbd>G</kbd> toggle Force / Geometry layer</li>
+                <li><kbd>7</kbd>–<kbd>0</kbd> geometry tools</li>
+                <li><kbd>M</kbd> toggle metric grid</li>
+                <li><kbd>X</kbd> clear geometry</li>
                 <li><kbd>Space</kbd> pause</li>
-                <li><kbd>R</kbd> reset particles</li>
-                <li><kbd>C</kbd> clear trails</li>
-                <li><kbd>N</kbd> new seed</li>
-                <li><kbd>E</kbd> export PNG</li>
-                <li><kbd>T</kbd> ambient tone</li>
-                <li><kbd>F</kbd> fullscreen</li>
-                <li><kbd>H</kbd> / <kbd>?</kbd> this help</li>
-                <li><kbd>[</kbd> <kbd>]</kbd> toggle panels</li>
+                <li><kbd>R</kbd> reset · <kbd>C</kbd> clear trails</li>
+                <li><kbd>N</kbd> new seed · <kbd>E</kbd> export</li>
+                <li><kbd>T</kbd> tone · <kbd>F</kbd> fullscreen</li>
+                <li><kbd>?</kbd> this help · <kbd>[</kbd> <kbd>]</kbd> panels</li>
               </ul>
             </div>
           </div>
-          <p class="credit">Built in one shot by <strong>Grok 4.5</strong> · free-tier friendly · zero build step · open <code>index.html</code></p>
+          <p class="credit">Nebula · invent tiny universe experiments · living metric is a 2D rubber-sheet analogy, not full GR · pure HTML/JS · open <code>index.html</code></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- First-run discovery coach -->
+    <div class="discovery" id="discovery" hidden>
+      <div class="discovery-card" role="dialog" aria-labelledby="discovery-title">
+        <div class="discovery-step" id="discovery-step">1 / 3</div>
+        <h2 id="discovery-title">Forces push particles</h2>
+        <p id="discovery-body">Move your cursor — the field follows you. Click for a stronger push.</p>
+        <div class="discovery-actions">
+          <button type="button" class="linkish" id="btn-discovery-skip">Skip</button>
+          <button type="button" class="btn-primary" id="btn-discovery-next">Next</button>
         </div>
       </div>
     </div>
@@ -287,8 +411,9 @@
           <span class="core"></span>
         </div>
         <h1>Nebula</h1>
-        <p>Move your cursor. Shape a universe.</p>
+        <p>Push matter. Bend space. Share what you find.</p>
         <button type="button" class="btn-primary lg" id="btn-start">Enter the field</button>
+        <button type="button" class="btn-ghost splash-secondary" id="btn-start-rubber">Run Rubber Sheet experiment</button>
         <button type="button" class="linkish" id="btn-help-splash">Keyboard shortcuts</button>
       </div>
     </div>

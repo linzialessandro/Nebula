@@ -1,6 +1,6 @@
 /* ─────────────────────────────────────────────
    Nebula — generative physics playground
-   Built by Grok 4.5
+   Glass UI · responsive panels · geometry tools
    ───────────────────────────────────────────── */
 
 :root {
@@ -411,6 +411,227 @@ body {
   padding: 1px 4px;
 }
 
+/* ─── Geometry UI ──────────────────────────────────────────── */
+
+.layer-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 10px;
+}
+
+.layer-btn {
+  flex: 1;
+  padding: 7px 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+
+.layer-btn:hover {
+  color: var(--text);
+}
+
+.layer-btn.active {
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.22), rgba(94, 234, 212, 0.12));
+  color: var(--text);
+  box-shadow: 0 2px 8px rgba(167, 139, 250, 0.18);
+}
+
+.geo-tools {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+
+.geo-tool-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 8px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-dim);
+  font-family: var(--font);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+
+.geo-tool-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.geo-tool-btn.active {
+  border-color: rgba(94, 234, 212, 0.45);
+  background: linear-gradient(145deg, rgba(94, 234, 212, 0.14), rgba(167, 139, 250, 0.06));
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px rgba(94, 234, 212, 0.1);
+}
+
+.geo-section {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.section-lede {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  margin: -4px 0 12px;
+}
+
+.btn-discover {
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(94, 234, 212, 0.35);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, rgba(94, 234, 212, 0.16), rgba(167, 139, 250, 0.12));
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: transform 0.15s var(--ease), box-shadow 0.2s, border-color 0.2s;
+}
+
+.btn-discover:hover {
+  border-color: rgba(94, 234, 212, 0.55);
+  box-shadow: 0 6px 20px rgba(94, 234, 212, 0.12);
+  transform: translateY(-1px);
+}
+
+.geo-advanced {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.geo-advanced summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 6px 0;
+  user-select: none;
+}
+
+.geo-advanced summary::-webkit-details-marker {
+  display: none;
+}
+
+.geo-advanced summary::before {
+  content: "▸ ";
+  color: var(--text-faint);
+}
+
+.geo-advanced[open] summary::before {
+  content: "▾ ";
+}
+
+.geo-advanced .slider-row {
+  margin-top: 8px;
+}
+
+.preset-btn.primary-preset {
+  border-color: rgba(167, 139, 250, 0.4);
+  background: linear-gradient(145deg, rgba(167, 139, 250, 0.14), rgba(94, 234, 212, 0.06));
+}
+
+.splash-secondary {
+  margin-top: 10px;
+  width: min(100%, 280px);
+}
+
+/* Discovery coach */
+.discovery {
+  position: absolute;
+  left: 50%;
+  bottom: 88px;
+  transform: translateX(-50%);
+  z-index: 40;
+  width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.discovery[hidden] {
+  display: none !important;
+}
+
+.discovery-card {
+  pointer-events: auto;
+  padding: 18px 18px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  backdrop-filter: blur(var(--blur));
+  -webkit-backdrop-filter: blur(var(--blur));
+  box-shadow: var(--shadow);
+  animation: discovery-in 0.35s var(--ease);
+}
+
+@keyframes discovery-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.discovery-step {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-2);
+  margin-bottom: 8px;
+}
+
+.discovery-card h2 {
+  font-size: 17px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.discovery-card p {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  margin-bottom: 14px;
+}
+
+.discovery-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 /* Palette */
 .palette-row {
   display: flex;
@@ -613,6 +834,7 @@ input[type="range"]::-moz-range-thumb {
 
 .panel-footer {
   display: flex;
+  flex-direction: column;
   gap: 6px;
   margin-top: auto;
   padding-top: 8px;
