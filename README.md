@@ -4,9 +4,12 @@
 
 Push particles with forces. Then bend the space they live in. Share the experiment you invent.
 
+**Live demo:** [linzialessandro.github.io/Nebula](https://linzialessandro.github.io/Nebula/)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-a78bfa.svg)](./LICENSE)
 [![No build](https://img.shields.io/badge/build-none-5eead4.svg)](#quick-start)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-22d3ee.svg)](#files)
+[![GitHub Pages](https://img.shields.io/badge/demo-GitHub%20Pages-a78bfa.svg)](https://linzialessandro.github.io/Nebula/)
 
 ---
 
@@ -21,7 +24,7 @@ python3 -m http.server 8765
 # → http://localhost:8765
 ```
 
-No install. No bundler. No API keys.
+No install. No bundler. No API keys. Or use the [live demo](https://linzialessandro.github.io/Nebula/).
 
 ---
 
