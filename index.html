@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="description" content="Nebula — generative physics playground. Push particles with forces, bend space with a living metric, and share your experiment." />
+  <meta name="description" content="Nebula — generative physics playground and educational relativity lab. Forces, rubber-sheet geometry, and Schwarzschild geodesics." />
   <meta name="theme-color" content="#05050f" />
-  <title>Nebula — Generative Physics Playground</title>
+  <title>Nebula — Physics Playground &amp; Relativity Lab</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
@@ -28,11 +28,22 @@
         </div>
         <div class="brand-text">
           <h1>Nebula</h1>
-          <p>generative physics playground</p>
+          <p>physics playground · relativity lab</p>
         </div>
       </div>
 
+      <div class="sim-mode-toggle" role="tablist" aria-label="Simulation mode">
+        <button type="button" class="sim-mode-btn active" data-sim-mode="playground" role="tab" aria-selected="true" title="Playground (P)">Play</button>
+        <button type="button" class="sim-mode-btn" data-sim-mode="relativity" role="tab" aria-selected="false" title="Relativity lab (P)">Relativity</button>
+      </div>
+
       <div class="top-actions">
+        <button type="button" class="icon-btn" id="btn-focus" title="Focus UI — hide panels (\\)" aria-pressed="false">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M4 12h4M16 12h4M12 4v4M12 16v4" />
+          </svg>
+        </button>
         <button type="button" class="icon-btn" id="btn-sound" title="Toggle ambient tone (T)" aria-pressed="false">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
             <path d="M11 5L6 9H3v6h3l5 4V5z" />
@@ -70,7 +81,41 @@
 
     <!-- Left panel: modes + palette -->
     <aside class="panel panel-left" id="panel-left">
-      <section class="panel-section">
+      <section class="panel-section rel-only">
+        <h2>Relativity Lab</h2>
+        <p class="section-lede">Schwarzschild geodesics (single mass) or weak-field multi-mass. Geometric units G=c=1; length = pixel. Solid ring = horizon rₛ=2M; dashed = photon sphere 3M.</p>
+        <div class="preset-list">
+          <button type="button" class="preset-btn rel-preset-btn primary-preset" data-relpreset="circular">Circular orbits</button>
+          <button type="button" class="preset-btn rel-preset-btn" data-relpreset="plunge">Plunge / capture</button>
+          <button type="button" class="preset-btn rel-preset-btn" data-relpreset="light-bend">Light deflection</button>
+          <button type="button" class="preset-btn rel-preset-btn" data-relpreset="photon-sphere">Photon sphere</button>
+          <button type="button" class="preset-btn rel-preset-btn" data-relpreset="binary">Binary (weak)</button>
+        </div>
+        <label class="slider-row">
+          <div class="slider-meta">
+            <span>Central mass M (px)</span>
+            <span class="slider-val" id="val-rel-mass">28</span>
+          </div>
+          <input type="range" id="ctrl-rel-mass" min="12" max="56" step="1" value="28" />
+        </label>
+        <label class="slider-row">
+          <div class="slider-meta">
+            <span>Photon fraction</span>
+            <span class="slider-val" id="val-photon-frac">0.20</span>
+          </div>
+          <input type="range" id="ctrl-photon-frac" min="0" max="0.9" step="0.05" value="0.2" />
+        </label>
+        <label class="slider-row">
+          <div class="slider-meta">
+            <span>Integrator step</span>
+            <span class="slider-val" id="val-rel-dt">1.25</span>
+          </div>
+          <input type="range" id="ctrl-rel-dt" min="0.4" max="3" step="0.05" value="1.25" />
+        </label>
+        <p class="section-lede" style="margin-top:8px">Press <kbd>G</kbd> then click to place additional masses (weak-field). Color encodes γ / redshift.</p>
+      </section>
+
+      <section class="panel-section play-only">
         <h2>Force Mode</h2>
         <div class="mode-grid" role="radiogroup" aria-label="Force mode">
           <button type="button" class="mode-card active" data-mode="attract" role="radio" aria-checked="true">
@@ -118,7 +163,7 @@
         </div>
       </section>
 
-      <section class="panel-section">
+      <section class="panel-section play-only">
         <h2>Presets</h2>
         <div class="preset-list">
           <button type="button" class="preset-btn" data-preset="bigbang">Big Bang</button>
@@ -128,9 +173,9 @@
         </div>
       </section>
 
-      <section class="panel-section geo-section">
+      <section class="panel-section geo-section play-only">
         <h2>Space Geometry</h2>
-        <p class="section-lede">Bend the surface particles live on. Free motion curves even with the cursor field off.</p>
+        <p class="section-lede">Rubber-sheet analogy — not full GR. Free motion curves even with the cursor field off.</p>
         <div class="layer-toggle" role="tablist" aria-label="Interaction layer">
           <button type="button" class="layer-btn active" data-layer="force" role="tab" aria-selected="true">Force</button>
           <button type="button" class="layer-btn" data-layer="geometry" role="tab" aria-selected="false">Geometry</button>
@@ -217,7 +262,7 @@
         </details>
       </section>
 
-      <section class="panel-section">
+      <section class="panel-section play-only">
         <h2>Geometry Presets</h2>
         <div class="preset-list">
           <button type="button" class="preset-btn geo-preset-btn primary-preset" data-geopreset="rubber-sheet">Rubber Sheet</button>
@@ -306,13 +351,29 @@
             <span class="stat-label">Particles</span>
             <span class="stat-value" id="stat-particles">1200</span>
           </div>
-          <div class="stat">
+          <div class="stat play-only">
             <span class="stat-label">Links</span>
             <span class="stat-value" id="stat-links">0</span>
           </div>
-          <div class="stat">
+          <div class="stat play-only">
             <span class="stat-label">Mode</span>
             <span class="stat-value" id="stat-mode">attract</span>
+          </div>
+          <div class="stat rel-only">
+            <span class="stat-label">Mean γ</span>
+            <span class="stat-value" id="stat-gamma">1.00</span>
+          </div>
+          <div class="stat rel-only">
+            <span class="stat-label">⟨E⟩ err</span>
+            <span class="stat-value" id="stat-energy-err">0%</span>
+          </div>
+          <div class="stat rel-only">
+            <span class="stat-label">Photons</span>
+            <span class="stat-value" id="stat-photons">0</span>
+          </div>
+          <div class="stat rel-only">
+            <span class="stat-label">Model</span>
+            <span class="stat-value" id="stat-rel-model">—</span>
           </div>
         </div>
       </section>
@@ -355,34 +416,33 @@
           <button type="button" class="icon-btn" data-close-help aria-label="Close">✕</button>
         </header>
         <div class="modal-body">
-          <p class="lede">Nebula has two ways to play with a universe. <strong>Force modes</strong> let your cursor push particles. <strong>Space geometry</strong> lets you bend the surface they live on — the rubber-sheet idea from general relativity. Turn off the cursor field, drop a well, and watch free particles draw geodesics with their trails.</p>
+          <p class="lede">Nebula has two simulation modes. <strong>Playground</strong> is a force + rubber-sheet discovery toy. <strong>Relativity</strong> integrates Schwarzschild geodesics (single mass) and weak-field multi-mass motion for massive particles and photons — educational GR, not numerical relativity.</p>
           <div class="help-grid">
             <div>
               <h3>Mouse / Touch</h3>
               <ul>
-                <li><strong>Move</strong> — field follows you</li>
+                <li><strong>Move</strong> — force field (Play)</li>
                 <li><strong>Click / hold</strong> — stronger force</li>
-                <li><strong>Drag</strong> — paint velocity into the void</li>
-                <li><strong>Shift+click</strong> — place hill (negative well)</li>
+                <li><strong>G + click</strong> — place well / mass</li>
+                <li><strong>Shift+click</strong> — hill (Play only)</li>
               </ul>
             </div>
             <div>
               <h3>Keyboard</h3>
               <ul>
-                <li><kbd>1</kbd>–<kbd>6</kbd> force modes</li>
-                <li><kbd>G</kbd> toggle Force / Geometry layer</li>
-                <li><kbd>7</kbd>–<kbd>0</kbd> geometry tools</li>
-                <li><kbd>M</kbd> toggle metric grid</li>
-                <li><kbd>X</kbd> clear geometry</li>
-                <li><kbd>Space</kbd> pause</li>
-                <li><kbd>R</kbd> reset · <kbd>C</kbd> clear trails</li>
-                <li><kbd>N</kbd> new seed · <kbd>E</kbd> export</li>
-                <li><kbd>T</kbd> tone · <kbd>F</kbd> fullscreen</li>
-                <li><kbd>?</kbd> this help · <kbd>[</kbd> <kbd>]</kbd> panels</li>
+                <li><kbd>P</kbd> Playground ↔ Relativity</li>
+                <li><kbd>\</kbd> focus UI (hide panels)</li>
+                <li><kbd>1</kbd>–<kbd>6</kbd> force modes (Play)</li>
+                <li><kbd>G</kbd> Force / Geometry layer</li>
+                <li><kbd>7</kbd> place well / mass</li>
+                <li><kbd>M</kbd> grid / equipotentials</li>
+                <li><kbd>Space</kbd> pause · <kbd>R</kbd> reset</li>
+                <li><kbd>F</kbd> fullscreen · <kbd>?</kbd> help</li>
+                <li><kbd>[</kbd> <kbd>]</kbd> panels</li>
               </ul>
             </div>
           </div>
-          <p class="credit">Nebula · invent tiny universe experiments · living metric is a 2D rubber-sheet analogy, not full GR · pure HTML/JS · open <code>index.html</code></p>
+          <p class="credit">Relativity: geometric units G=c=1, rₛ=2M, photon sphere 3M. Multi-mass is weak-field. Playground geometry is a rubber-sheet analogy. Pure HTML/JS · open <code>index.html</code></p>
         </div>
       </div>
     </div>
@@ -411,10 +471,30 @@
           <span class="core"></span>
         </div>
         <h1>Nebula</h1>
-        <p>Push matter. Bend space. Share what you find.</p>
-        <button type="button" class="btn-primary lg" id="btn-start">Enter the field</button>
-        <button type="button" class="btn-ghost splash-secondary" id="btn-start-rubber">Run Rubber Sheet experiment</button>
-        <button type="button" class="linkish" id="btn-help-splash">Keyboard shortcuts</button>
+        <p class="splash-tagline">Push matter. Bend space. Share what you find.</p>
+
+        <p class="splash-choose">Choose a mode</p>
+        <div class="splash-paths" role="group" aria-label="Start mode">
+          <button type="button" class="splash-path" id="btn-start">
+            <span class="splash-path-kicker">Creative</span>
+            <span class="splash-path-title">Playground</span>
+            <span class="splash-path-desc">Forces, paint, and rubber-sheet geometry</span>
+          </button>
+          <button type="button" class="splash-path splash-path-science" id="btn-start-relativity">
+            <span class="splash-path-kicker">Science</span>
+            <span class="splash-path-title">Relativity lab</span>
+            <span class="splash-path-desc">Schwarzschild orbits, light, horizons</span>
+          </button>
+        </div>
+
+        <div class="splash-more">
+          <button type="button" class="splash-more-btn" id="btn-start-rubber">
+            Start with Rubber Sheet experiment
+          </button>
+          <button type="button" class="splash-more-btn splash-more-quiet" id="btn-help-splash">
+            Keyboard shortcuts
+          </button>
+        </div>
       </div>
     </div>
   </div>

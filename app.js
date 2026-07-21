@@ -1,8 +1,11 @@
 /**
- * Nebula — generative physics playground
+ * Nebula — generative physics playground + educational relativity lab
  *
- * Force fields + living metric (rubber-sheet geometry), discovery coach,
- * shareable experiment links, palettes, audio, and PNG export.
+ * Two sim modes:
+ *   Playground  — force fields + rubber-sheet living metric (analogy)
+ *   Relativity  — Schwarzschild / weak-field geodesics, massive + photons
+ *
+ * Shareable experiment links, palettes, audio, PNG export.
  * No build step. No dependencies. Open index.html.
  */
 
@@ -113,6 +116,7 @@
   const state = {
     seed: randomSeed(),
     rng: null,
+    simMode: "playground", // "playground" | "relativity"
     mode: "attract",
     palette: "aurora",
     count: 1200,
@@ -127,6 +131,7 @@
     paused: false,
     started: false,
     soundOn: false,
+    focusUi: false, // auto-hide panels for clear fullscreen viz
     width: 0,
     height: 0,
     dpr: 1,
@@ -139,11 +144,48 @@
     vy: null,
     life: null,
     hue: null,
+    // relativity particle extras
+    kind: null, // 0 massive, 1 photon
+    E: null, // conserved energy-at-infinity (or local scale for weak field)
+    L: null, // angular momentum about primary
+    urSign: null, // ±1 radial velocity sign (Schwarzschild)
+    gamma: null, // display γ / energy factor
+    alive: null, // 0 dead/absorbed, 1 active
     linkCount: 0,
     fps: 0,
     frames: 0,
     lastFpsTime: 0,
+    lastFrameTs: 0,
     time: 0,
+    // snapshot when leaving playground so we can restore
+    playgroundSnapshot: null,
+  };
+
+  /**
+   * Relativity engine config (geometric units G = c = 1, length = pixel).
+   * Mass M is in pixels; Schwarzschild radius rs = 2M; photon sphere r = 3M.
+   */
+  state.rel = {
+    dt: 1.25, // coordinate-time step per substep (pixels of light-travel)
+    substeps: 2,
+    massScale: 24, // playground well.mass=1 → M ≈ 24 px
+    defaultM: 28,
+    photonFraction: 0.2,
+    softAbsorb: 1.08, // absorb inside softAbsorb * rs
+    outerKill: 1.35, // fraction of max(w,h) — respawn if far
+    showHorizon: true,
+    showPhotonSphere: true,
+    showEquipotentials: true,
+    meanGamma: 1,
+    energyError: 0,
+    aliveCount: 0,
+    photonCount: 0,
+    massiveCount: 0,
+    E0sum: 0,
+    E0n: 0,
+    // weak kick from cursor in relativity (optional teaching tool)
+    allowKick: false,
+    kickStrength: 0.15,
   };
 
   // ─── Geometry state (living metric) ───────────────────────────
@@ -443,15 +485,32 @@
     if (geo.wells.length >= geo.maxWells) {
       geo.wells.shift();
     }
-    geo.wells.push({
+    const mUser = mass != null ? mass : geo.wellMass;
+    const well = {
       x: x,
       y: y,
-      mass: mass != null ? mass : geo.wellMass,
+      mass: mUser,
       radius: radius != null ? radius : geo.wellRadius,
       spin: spin || 0,
-    });
+    };
+    if (state.simMode === "relativity") {
+      well.M = Math.max(4, Math.abs(mUser) * state.rel.massScale);
+      well.radius = Math.max(well.radius, well.M * 3);
+    }
+    geo.wells.push(well);
     geo.dirty = true;
-    if (!quiet) toast(`Well placed (${geo.wells.length}/${geo.maxWells})`);
+    if (state.simMode === "relativity") {
+      // Re-seed orbits around the new mass configuration
+      initRelParticles();
+      clearTrails(true);
+    }
+    if (!quiet) {
+      toast(
+        state.simMode === "relativity"
+          ? `Mass M≈${well.M | 0} px · rₛ=${(2 * well.M) | 0}`
+          : `Well placed (${geo.wells.length}/${geo.maxWells})`
+      );
+    }
   }
 
   /**
@@ -534,12 +593,22 @@
   function updateHudHint() {
     const hint = document.getElementById("hud-hint");
     if (!hint) return;
+    if (state.simMode === "relativity") {
+      if (state.geometry.interaction === "geometry") {
+        hint.innerHTML =
+          "<kbd>Click</kbd> place mass · <kbd>G</kbd> done · solid ring = horizon · dashed = photon sphere · <kbd>\\</kbd> focus UI";
+      } else {
+        hint.innerHTML =
+          "<kbd>P</kbd> playground · color = γ · <kbd>7</kbd> place mass · trails = geodesics · <kbd>\\</kbd> focus UI · <kbd>?</kbd> help";
+      }
+      return;
+    }
     if (state.geometry.interaction === "geometry") {
       hint.innerHTML =
         "<kbd>Click</kbd> place / paint space · <kbd>G</kbd> back to force · <kbd>M</kbd> grid · <kbd>?</kbd> help";
     } else {
       hint.innerHTML =
-        "<kbd>G</kbd> geometry · <kbd>1</kbd>–<kbd>6</kbd> modes · move cursor to push · <kbd>?</kbd> help";
+        "<kbd>P</kbd> relativity · <kbd>G</kbd> geometry · <kbd>1</kbd>–<kbd>6</kbd> modes · <kbd>?</kbd> help";
     }
   }
 
@@ -800,6 +869,885 @@
   let oscB = null;
   let lfo = null;
 
+  // ─── Relativity engine ──────────────────────────────────────────
+  // Geometric units: G = c = 1. Screen pixels are the length unit.
+  // Single mass → equatorial Schwarzschild geodesics (massive + null).
+  // Multi mass → weak-field potential Φ = −Σ M_i/r_i + relativistic p, null bend.
+
+  function wellGeometricMass(well) {
+    const m = well.M != null ? well.M : Math.abs(well.mass) * state.rel.massScale;
+    return Math.max(4, m);
+  }
+
+  function relMasses() {
+    const wells = state.geometry.wells;
+    const out = [];
+    for (let k = 0; k < wells.length; k++) {
+      const w = wells[k];
+      if (w.mass < 0 && w.M == null) continue; // skip hills in GR mode
+      const M = wellGeometricMass(w);
+      out.push({ x: w.x, y: w.y, M, rs: 2 * M });
+    }
+    return out;
+  }
+
+  function ensurePrimaryMass() {
+    if (state.geometry.wells.length === 0) {
+      const cx = state.width * 0.5;
+      const cy = state.height * 0.5;
+      const M = state.rel.defaultM;
+      state.geometry.wells.push({
+        x: cx,
+        y: cy,
+        mass: M / state.rel.massScale,
+        M,
+        radius: Math.max(60, M * 3.2),
+        spin: 0,
+      });
+      state.geometry.dirty = true;
+    } else {
+      // stamp geometric M on existing wells
+      for (let k = 0; k < state.geometry.wells.length; k++) {
+        const w = state.geometry.wells[k];
+        if (w.M == null) w.M = wellGeometricMass(w);
+      }
+    }
+  }
+
+  function wrapDelta(dx, dy) {
+    // Open plane in relativity (no toroidal gravity). No wrap.
+    return { dx, dy };
+  }
+
+  function potentialGrad(px, py, masses) {
+    // Φ = −Σ M/r , return {Φ, gx, gy} with g = ∇Φ
+    let Phi = 0;
+    let gx = 0;
+    let gy = 0;
+    for (let k = 0; k < masses.length; k++) {
+      const m = masses[k];
+      let dx = px - m.x;
+      let dy = py - m.y;
+      const r2 = dx * dx + dy * dy + 1e-6;
+      const r = Math.sqrt(r2);
+      Phi -= m.M / r;
+      // ∇Φ = M rhat / r²
+      const invR3 = m.M / (r2 * r);
+      gx += dx * invR3;
+      gy += dy * invR3;
+    }
+    return { Phi, gx, gy };
+  }
+
+  function schwarzschildVeff(r, M, L, isPhoton) {
+    const f = 1 - (2 * M) / r;
+    if (isPhoton) return (L * L * f) / (r * r);
+    return f * (1 + (L * L) / (r * r));
+  }
+
+  /** Circular-orbit E, L for massive particle at radius r (Schwarzschild). */
+  function circularEL(r, M) {
+    // Require r > 6M for stable; allow down to ~3.5M unstable for demos
+    const rSafe = Math.max(r, 3.5 * M);
+    const L2 = (M * rSafe * rSafe) / (rSafe - 3 * M);
+    const L = Math.sqrt(Math.max(L2, 0));
+    const E2 = ((rSafe - 2 * M) * (rSafe - 2 * M)) / (rSafe * (rSafe - 3 * M));
+    const E = Math.sqrt(Math.max(E2, 1e-8));
+    return { E, L };
+  }
+
+  /** Critical impact parameter for photon capture: b_c = 3√3 M */
+  function photonCriticalB(M) {
+    return 3 * Math.sqrt(3) * M;
+  }
+
+  function killRelParticle(i) {
+    state.alive[i] = 0;
+    state.gamma[i] = 1;
+  }
+
+  function respawnRelParticle(i, masses) {
+    const rng = state.rng || Math.random;
+    const rnd = typeof rng === "function" ? rng : () => Math.random();
+    const w = state.width;
+    const h = state.height;
+    const primary = masses[0];
+    if (!primary) {
+      state.x[i] = rnd() * w;
+      state.y[i] = rnd() * h;
+      state.alive[i] = 1;
+      return;
+    }
+
+    const isPhoton = state.kind[i] === 1;
+    const M = primary.M;
+    const angle = rnd() * Math.PI * 2;
+
+    if (isPhoton) {
+      // Null rays from left/outer edge, various impact parameters
+      const side = rnd() < 0.5 ? -1 : 1;
+      const bMax = Math.min(w, h) * 0.42;
+      const b = (rnd() * 2 - 1) * bMax;
+      const x0 = primary.x + side * Math.min(w, h) * 0.48;
+      const y0 = primary.y + b;
+      state.x[i] = x0;
+      state.y[i] = y0;
+      // Aim roughly toward +x or −x past the mass
+      const dx = primary.x - x0;
+      const dy = primary.y - y0;
+      const r = Math.sqrt(dx * dx + dy * dy) + 1e-6;
+      // Impact parameter b ≈ L/E; set E=1, L=b_signed
+      const cross = dx * (y0 - primary.y) - dy * (x0 - primary.x);
+      // Better: asymptotic incoming from left with impact b
+      const bSigned = y0 - primary.y;
+      state.E[i] = 1;
+      state.L[i] = bSigned; // for motion mostly in +x from left
+      // If coming from right, flip
+      if (side > 0) {
+        state.L[i] = -bSigned;
+      }
+      // Radial sign: falling inward
+      state.urSign[i] = -1;
+      // Cartesian light velocity for weak-field path
+      state.vx[i] = -side * 1; // c=1 toward center line
+      state.vy[i] = 0;
+      state.gamma[i] = 1;
+      state.hue[i] = 3;
+    } else {
+      // Massive: annulus of near-circular / eccentric orbits
+      const rMin = 6.5 * M;
+      const rMax = Math.min(Math.min(w, h) * 0.38, 22 * M);
+      const r = rMin + rnd() * Math.max(8, rMax - rMin);
+      state.x[i] = primary.x + Math.cos(angle) * r;
+      state.y[i] = primary.y + Math.sin(angle) * r;
+      const ecc = rnd();
+      let { E, L } = circularEL(r, M);
+      if (ecc > 0.55) {
+        // eccentric: lower L slightly
+        L *= 0.82 + rnd() * 0.2;
+        E = Math.min(0.999, E * (0.96 + rnd() * 0.05));
+      } else if (ecc < 0.12) {
+        // plunge / highly bound
+        L *= 0.55 + rnd() * 0.25;
+        E *= 0.92 + rnd() * 0.05;
+      }
+      state.E[i] = E;
+      state.L[i] = L * (rnd() < 0.5 ? 1 : -1);
+      state.urSign[i] = rnd() < 0.5 ? 1 : -1;
+      // Seed cartesian velocity for weak multi-mass path
+      const tang = angle + Math.PI / 2;
+      const vOrb = Math.sqrt(Math.max(0.02, M / r)) * (0.85 + rnd() * 0.25);
+      const v = Math.min(0.92, vOrb);
+      state.vx[i] = Math.cos(tang) * v * Math.sign(state.L[i] || 1);
+      state.vy[i] = Math.sin(tang) * v * Math.sign(state.L[i] || 1);
+      state.gamma[i] = Math.max(1, E / Math.sqrt(Math.max(1e-6, 1 - 2 * M / r)));
+      state.hue[i] = (rnd() * 3) | 0;
+    }
+
+    state.alive[i] = 1;
+    state.life[i] = 1;
+  }
+
+  function initRelParticles() {
+    ensurePrimaryMass();
+    const masses = relMasses();
+    const n = state.count;
+    let photons = 0;
+    state.rel.E0sum = 0;
+    state.rel.E0n = 0;
+
+    for (let i = 0; i < n; i++) {
+      const isPhoton = (state.rng ? state.rng() : Math.random()) < state.rel.photonFraction;
+      state.kind[i] = isPhoton ? 1 : 0;
+      if (isPhoton) photons++;
+      respawnRelParticle(i, masses);
+      if (state.kind[i] === 0 && state.alive[i]) {
+        state.rel.E0sum += state.E[i];
+        state.rel.E0n++;
+      }
+    }
+    state.rel.photonCount = photons;
+    state.rel.massiveCount = n - photons;
+  }
+
+  /**
+   * One Schwarzschild coordinate-time step for particle i about primary mass.
+   * Uses conserved E, L and radial turning-point handling.
+   */
+  function stepSchwarzschild(i, primary, h) {
+    if (!state.alive[i]) return;
+
+    const M = primary.M;
+    const rs = primary.rs;
+    let dx = state.x[i] - primary.x;
+    let dy = state.y[i] - primary.y;
+    let r = Math.sqrt(dx * dx + dy * dy);
+
+    if (r < rs * state.rel.softAbsorb || r < 1e-3) {
+      killRelParticle(i);
+      return;
+    }
+
+    const isPhoton = state.kind[i] === 1;
+    let E = state.E[i];
+    let L = state.L[i];
+    if (!(E > 0)) E = state.E[i] = isPhoton ? 1 : 0.97;
+
+    // RK2 midpoint on (r, φ)
+    const stepPair = (r0, phi0, hh) => {
+      const f = 1 - (2 * M) / r0;
+      if (f <= 1e-8 || r0 <= rs * 1.001) return null;
+      let V = schwarzschildVeff(r0, M, L, isPhoton);
+      let ur2 = E * E - V;
+      if (ur2 < 0) {
+        state.urSign[i] *= -1;
+        ur2 = 0;
+      }
+      const ur = state.urSign[i] * Math.sqrt(ur2);
+      const factor = f / E;
+      const dr = ur * factor * hh;
+      const dphi = ((L / (r0 * r0)) * factor) * hh;
+      return { r: r0 + dr, phi: phi0 + dphi, f, ur, factor };
+    };
+
+    let phi = Math.atan2(dy, dx);
+    const half = stepPair(r, phi, h * 0.5);
+    if (!half) {
+      killRelParticle(i);
+      return;
+    }
+    const full = stepPair(half.r, half.phi, h);
+    if (!full) {
+      killRelParticle(i);
+      return;
+    }
+
+    // Turning detection: if Veff rose above E² at new r, flip and clamp
+    let Vn = schwarzschildVeff(full.r, M, L, isPhoton);
+    if (E * E - Vn < 0) {
+      state.urSign[i] *= -1;
+      // stay put radially this step; only precess slightly
+      full.r = r;
+    }
+
+    if (full.r < rs * state.rel.softAbsorb) {
+      killRelParticle(i);
+      return;
+    }
+
+    const nx = primary.x + full.r * Math.cos(full.phi);
+    const ny = primary.y + full.r * Math.sin(full.phi);
+    // coordinate velocity for display
+    state.vx[i] = (nx - state.x[i]) / Math.max(h, 1e-6);
+    state.vy[i] = (ny - state.y[i]) / Math.max(h, 1e-6);
+    state.x[i] = nx;
+    state.y[i] = ny;
+
+    const fNow = 1 - (2 * M) / full.r;
+    if (isPhoton) {
+      // frequency shift factor vs infinity (static observer)
+      state.gamma[i] = 1 / Math.sqrt(Math.max(fNow, 1e-4));
+    } else {
+      // energy-at-infinity over redshift factor ≈ local γ-like readout
+      state.gamma[i] = Math.max(1, E / Math.sqrt(Math.max(fNow, 1e-4)));
+    }
+  }
+
+  /** Weak-field multi-mass step with relativistic momentum (massive) or null bend (photon). */
+  function stepWeakField(i, masses, h) {
+    if (!state.alive[i]) return;
+
+    const px0 = state.x[i];
+    const py0 = state.y[i];
+
+    // Horizon absorption for any mass
+    for (let k = 0; k < masses.length; k++) {
+      const m = masses[k];
+      const dx = px0 - m.x;
+      const dy = py0 - m.y;
+      const r = Math.sqrt(dx * dx + dy * dy);
+      if (r < m.rs * state.rel.softAbsorb) {
+        killRelParticle(i);
+        return;
+      }
+    }
+
+    const g = potentialGrad(px0, py0, masses);
+    const isPhoton = state.kind[i] === 1;
+
+    if (isPhoton) {
+      // Null ray, |v|=c=1; bend with 2× Newtonian transverse acceleration
+      let vx = state.vx[i];
+      let vy = state.vy[i];
+      let sp = Math.sqrt(vx * vx + vy * vy) || 1;
+      vx /= sp;
+      vy /= sp;
+      // a = -2 ∇Φ, remove parallel component
+      let ax = -2 * g.gx;
+      let ay = -2 * g.gy;
+      const apar = ax * vx + ay * vy;
+      ax -= apar * vx;
+      ay -= apar * vy;
+      vx += ax * h;
+      vy += ay * h;
+      sp = Math.sqrt(vx * vx + vy * vy) || 1;
+      vx /= sp;
+      vy /= sp;
+      state.vx[i] = vx;
+      state.vy[i] = vy;
+      state.x[i] += vx * h;
+      state.y[i] += vy * h;
+      // redshift proxy from Φ (weak): √(1+2Φ) ≈ 1+Φ
+      state.gamma[i] = 1 / Math.max(0.15, Math.sqrt(Math.max(1e-4, 1 + 2 * g.Phi)));
+    } else {
+      // Relativistic momentum p = γv, F = −∇Φ (rest mass 1)
+      let vx = state.vx[i];
+      let vy = state.vy[i];
+      let v2 = vx * vx + vy * vy;
+      if (v2 > 0.999) {
+        const s = Math.sqrt(0.999 / v2);
+        vx *= s;
+        vy *= s;
+        v2 = 0.999;
+      }
+      let gamma = 1 / Math.sqrt(Math.max(1e-8, 1 - v2));
+      let ppx = gamma * vx;
+      let ppy = gamma * vy;
+      // Optional GR periapsis factor on force near masses (1 + 3M/r-ish blend)
+      let fx = -g.gx;
+      let fy = -g.gy;
+      ppx += fx * h;
+      ppy += fy * h;
+      const p2 = ppx * ppx + ppy * ppy;
+      gamma = Math.sqrt(1 + p2);
+      vx = ppx / gamma;
+      vy = ppy / gamma;
+      state.vx[i] = vx;
+      state.vy[i] = vy;
+      state.x[i] += vx * h;
+      state.y[i] += vy * h;
+      state.gamma[i] = gamma;
+      // Keep E roughly as energy at infinity proxy: γ_∞ ≈ γ + Φ
+      state.E[i] = gamma + g.Phi;
+    }
+  }
+
+  function integrateRelativity() {
+    const rel = state.rel;
+    const masses = relMasses();
+    if (masses.length === 0) {
+      ensurePrimaryMass();
+      return;
+    }
+
+    const single = masses.length === 1;
+    const primary = masses[0];
+    const n = state.count;
+    const h = rel.dt;
+    const sub = rel.substeps;
+    const w = state.width;
+    const hgt = state.height;
+    const outer = Math.max(w, hgt) * rel.outerKill;
+
+    let gSum = 0;
+    let gN = 0;
+    let eSum = 0;
+    let eN = 0;
+    let alive = 0;
+    let photons = 0;
+
+    for (let s = 0; s < sub; s++) {
+      for (let i = 0; i < n; i++) {
+        if (!state.alive[i]) {
+          // occasional respawn so the lab stays populated
+          if ((i + state.frames + s) % 90 === 0) {
+            respawnRelParticle(i, masses);
+          }
+          continue;
+        }
+
+        if (single) {
+          stepSchwarzschild(i, primary, h);
+        } else {
+          stepWeakField(i, masses, h);
+        }
+
+        // Soft outer boundary: respawn (open universe, not torus)
+        if (state.alive[i]) {
+          const dx = state.x[i] - primary.x;
+          const dy = state.y[i] - primary.y;
+          if (dx * dx + dy * dy > outer * outer) {
+            respawnRelParticle(i, masses);
+          }
+          // Also clamp to slightly expanded screen for viz
+          if (
+            state.x[i] < -w * 0.1 ||
+            state.x[i] > w * 1.1 ||
+            state.y[i] < -hgt * 0.1 ||
+            state.y[i] > hgt * 1.1
+          ) {
+            respawnRelParticle(i, masses);
+          }
+        }
+      }
+    }
+
+    // Optional teaching kick (small SR impulse from cursor)
+    if (rel.allowKick && state.mouse.inside && state.mouse.down) {
+      for (let i = 0; i < n; i++) {
+        if (!state.alive[i] || state.kind[i] === 1) continue;
+        const dx = state.mouse.x - state.x[i];
+        const dy = state.mouse.y - state.y[i];
+        const d2 = dx * dx + dy * dy + 400;
+        const f = rel.kickStrength * 40 / d2;
+        // perturb E/L path via cartesian for weak, or L for single
+        if (single) {
+          state.L[i] += (dx * state.vy[i] - dy * state.vx[i]) * f * 0.01;
+        } else {
+          state.vx[i] += dx * f * 0.02;
+          state.vy[i] += dy * f * 0.02;
+        }
+      }
+    }
+
+    for (let i = 0; i < n; i++) {
+      if (!state.alive[i]) continue;
+      alive++;
+      if (state.kind[i] === 1) photons++;
+      gSum += state.gamma[i];
+      gN++;
+      if (state.kind[i] === 0) {
+        eSum += state.E[i];
+        eN++;
+      }
+    }
+
+    rel.aliveCount = alive;
+    rel.photonCount = photons;
+    rel.massiveCount = alive - photons;
+    rel.meanGamma = gN ? gSum / gN : 1;
+    if (rel.E0n > 0 && eN > 0) {
+      const e0 = rel.E0sum / rel.E0n;
+      const eNow = eSum / eN;
+      rel.energyError = e0 > 1e-8 ? Math.abs(eNow - e0) / e0 : 0;
+    } else {
+      rel.energyError = 0;
+    }
+  }
+
+  function drawRelativityOverlays(ctx2d) {
+    const rel = state.rel;
+    const masses = relMasses();
+    if (!masses.length) return;
+    const colors = PALETTES[state.palette];
+    const cH = colors[1] || colors[0];
+    const cP = colors[2] || colors[0];
+    const cE = colors[0];
+
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+
+    for (let k = 0; k < masses.length; k++) {
+      const m = masses[k];
+      const rs = m.rs;
+      const rPh = 3 * m.M;
+
+      // Equipotential rings (weak-field style visual guides)
+      if (rel.showEquipotentials) {
+        ctx2d.strokeStyle = `rgba(${cE[0]},${cE[1]},${cE[2]},0.08)`;
+        ctx2d.lineWidth = 0.8;
+        for (let s = 2; s <= 6; s++) {
+          const rr = s * 2 * m.M;
+          ctx2d.beginPath();
+          ctx2d.arc(m.x, m.y, rr, 0, Math.PI * 2);
+          ctx2d.stroke();
+        }
+      }
+
+      // Photon sphere
+      if (rel.showPhotonSphere) {
+        ctx2d.strokeStyle = `rgba(${cP[0]},${cP[1]},${cP[2]},0.35)`;
+        ctx2d.lineWidth = 1.1;
+        ctx2d.setLineDash([5, 5]);
+        ctx2d.beginPath();
+        ctx2d.arc(m.x, m.y, rPh, 0, Math.PI * 2);
+        ctx2d.stroke();
+        ctx2d.setLineDash([]);
+      }
+
+      // Event horizon (filled soft disk + ring)
+      if (rel.showHorizon) {
+        const grad = ctx2d.createRadialGradient(m.x, m.y, 0, m.x, m.y, rs);
+        grad.addColorStop(0, "rgba(0,0,0,0.85)");
+        grad.addColorStop(0.7, "rgba(0,0,0,0.55)");
+        grad.addColorStop(1, `rgba(${cH[0]},${cH[1]},${cH[2]},0.25)`);
+        ctx2d.fillStyle = grad;
+        ctx2d.beginPath();
+        ctx2d.arc(m.x, m.y, rs, 0, Math.PI * 2);
+        ctx2d.fill();
+        ctx2d.strokeStyle = `rgba(${cH[0]},${cH[1]},${cH[2]},0.7)`;
+        ctx2d.lineWidth = 1.4;
+        ctx2d.beginPath();
+        ctx2d.arc(m.x, m.y, rs, 0, Math.PI * 2);
+        ctx2d.stroke();
+      }
+    }
+
+    // Legend tags near primary
+    const p = masses[0];
+    ctx2d.font = "11px JetBrains Mono, monospace";
+    ctx2d.fillStyle = "rgba(248,250,252,0.45)";
+    ctx2d.fillText("rₛ horizon", p.x + p.rs + 8, p.y - 4);
+    if (rel.showPhotonSphere) {
+      ctx2d.fillStyle = `rgba(${cP[0]},${cP[1]},${cP[2]},0.5)`;
+      ctx2d.fillText("photon sphere 3M", p.x + 3 * p.M + 8, p.y + 14);
+    }
+
+    ctx2d.restore();
+  }
+
+  function gammaColor(g, colors) {
+    // Map γ to palette blend: low → colors[0], high → colors[2]
+    const t = Math.max(0, Math.min(1, (g - 1) / 1.8));
+    const a = colors[0];
+    const b = colors[2] || colors[1] || colors[0];
+    return [
+      (a[0] + (b[0] - a[0]) * t) | 0,
+      (a[1] + (b[1] - a[1]) * t) | 0,
+      (a[2] + (b[2] - a[2]) * t) | 0,
+    ];
+  }
+
+  function renderRelativity() {
+    const { width: w, height: h, count: n, size, trail, bloom } = state;
+    const colors = PALETTES[state.palette];
+
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = `rgba(5, 5, 15, ${trail})`;
+    ctx.fillRect(0, 0, w, h);
+
+    drawRelativityOverlays(ctx);
+
+    ctx.globalCompositeOperation = bloom ? "lighter" : "source-over";
+
+    for (let i = 0; i < n; i++) {
+      if (!state.alive[i]) continue;
+      const isPhoton = state.kind[i] === 1;
+      const g = state.gamma[i] || 1;
+      const c = isPhoton
+        ? colors[3] || colors[2] || colors[0]
+        : gammaColor(g, colors);
+      const sp = Math.sqrt(state.vx[i] * state.vx[i] + state.vy[i] * state.vy[i]);
+      const alpha = isPhoton
+        ? Math.min(0.95, 0.45 + Math.min(g, 3) * 0.12)
+        : Math.min(0.95, 0.4 + (g - 1) * 0.25);
+      const r = size * (isPhoton ? 1.15 : 0.85 + Math.min((g - 1) * 0.4, 1.2));
+
+      if (bloom && (isPhoton || g > 1.25)) {
+        const glow = r * (isPhoton ? 2.8 : 2.2);
+        ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${alpha * 0.22})`;
+        ctx.beginPath();
+        ctx.arc(state.x[i], state.y[i], glow, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${alpha})`;
+      ctx.beginPath();
+      ctx.arc(state.x[i], state.y[i], r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Cursor place-mass ghost in geometry-like interaction
+    if (state.mouse.inside && state.geometry.interaction === "geometry") {
+      const c = colors[0];
+      const M = state.geometry.wellMass * state.rel.massScale;
+      ctx.strokeStyle = `rgba(${c[0]},${c[1]},${c[2]},0.35)`;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(state.mouse.x, state.mouse.y, 2 * M, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.arc(state.mouse.x, state.mouse.y, 3 * M, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    ctx.globalCompositeOperation = "source-over";
+    state.linkCount = 0;
+  }
+
+  function updateRelStats() {
+    const rel = state.rel;
+    const elG = document.getElementById("stat-gamma");
+    const elE = document.getElementById("stat-energy-err");
+    const elPh = document.getElementById("stat-photons");
+    const elModel = document.getElementById("stat-rel-model");
+    if (elG) elG.textContent = rel.meanGamma.toFixed(2);
+    if (elE) elE.textContent = (rel.energyError * 100).toFixed(2) + "%";
+    if (elPh) elPh.textContent = String(rel.photonCount);
+    if (elModel) {
+      const n = relMasses().length;
+      elModel.textContent = n <= 1 ? "Schwarzschild" : "Weak field";
+    }
+    if (els.statParticles) {
+      els.statParticles.textContent = String(rel.aliveCount || state.count);
+    }
+  }
+
+  function applyRelativityPreset(name) {
+    const rel = state.rel;
+    const w = state.width;
+    const h = state.height;
+    const cx = w * 0.5;
+    const cy = h * 0.5;
+    const short = Math.min(w, h);
+
+    clearGeometry();
+    state.cursorField = false;
+    const cur = document.getElementById("ctrl-cursor");
+    if (cur) cur.checked = false;
+    state.links = false;
+    const linksEl = document.getElementById("ctrl-links");
+    if (linksEl) linksEl.checked = false;
+    state.friction = 1;
+    state.trail = 0.045;
+    const trailEl = document.getElementById("ctrl-trail");
+    if (trailEl) trailEl.value = state.trail;
+    if (els.valTrail) els.valTrail.textContent = state.trail.toFixed(2);
+
+    const place = (x, y, M) => {
+      state.geometry.wells.push({
+        x,
+        y,
+        mass: M / rel.massScale,
+        M,
+        radius: Math.max(50, M * 3),
+        spin: 0,
+      });
+    };
+
+    let targetN = 280;
+    let photonFrac = 0.2;
+    let toastMsg = "Relativity preset";
+
+    if (name === "circular") {
+      place(cx, cy, 30);
+      photonFrac = 0.05;
+      targetN = 220;
+      toastMsg = "Near-circular orbits (r ≳ 6M)";
+    } else if (name === "plunge") {
+      place(cx, cy, 34);
+      photonFrac = 0.08;
+      targetN = 200;
+      toastMsg = "Inspirals & plunges into the horizon";
+    } else if (name === "light-bend") {
+      place(cx, cy, 32);
+      photonFrac = 0.72;
+      targetN = 260;
+      toastMsg = "Null geodesics — light deflection";
+    } else if (name === "photon-sphere") {
+      place(cx, cy, 36);
+      photonFrac = 0.55;
+      targetN = 240;
+      toastMsg = "Photon sphere (unstable) r = 3M";
+    } else if (name === "binary") {
+      const sep = short * 0.16;
+      place(cx - sep, cy, 22);
+      place(cx + sep, cy, 22);
+      photonFrac = 0.25;
+      targetN = 300;
+      toastMsg = "Binary weak-field lens (approx.)";
+    } else {
+      // default schwarzschild garden
+      place(cx, cy, rel.defaultM);
+      toastMsg = "Schwarzschild garden";
+    }
+
+    rel.photonFraction = photonFrac;
+    state.geometry.dirty = true;
+    ensureGeometryBaked();
+
+    if (targetN !== state.count) {
+      allocParticles(targetN);
+      const countEl = document.getElementById("ctrl-count");
+      if (countEl) countEl.value = targetN;
+      if (els.valCount) els.valCount.textContent = String(targetN);
+    }
+
+    // Special init for photon-sphere: inject near-critical photons
+    initRelParticles();
+    if (name === "photon-sphere") {
+      const M = relMasses()[0].M;
+      const primary = relMasses()[0];
+      for (let i = 0; i < state.count; i++) {
+        if (state.kind[i] !== 1) continue;
+        // Seed near r=3M with L ≈ E * b_c
+        const ang = (i / state.count) * Math.PI * 2;
+        const r = 3.05 * M;
+        state.x[i] = primary.x + Math.cos(ang) * r;
+        state.y[i] = primary.y + Math.sin(ang) * r;
+        state.E[i] = 1;
+        state.L[i] = photonCriticalB(M) * (i % 2 === 0 ? 1 : -1);
+        state.urSign[i] = i % 3 === 0 ? 1 : -1;
+        state.alive[i] = 1;
+      }
+    } else if (name === "circular") {
+      const primary = relMasses()[0];
+      const M = primary.M;
+      for (let i = 0; i < state.count; i++) {
+        if (state.kind[i] === 1) continue;
+        const t = i / Math.max(1, state.count - 1);
+        const r = (7 + t * 10) * M;
+        const ang = (i * 2.399) % (Math.PI * 2); // golden-ish
+        state.x[i] = primary.x + Math.cos(ang) * r;
+        state.y[i] = primary.y + Math.sin(ang) * r;
+        const el = circularEL(r, M);
+        state.E[i] = el.E;
+        state.L[i] = el.L;
+        state.urSign[i] = 1;
+        state.alive[i] = 1;
+        state.gamma[i] = el.E / Math.sqrt(1 - 2 * M / r);
+      }
+      // recompute E0
+      rel.E0sum = 0;
+      rel.E0n = 0;
+      for (let i = 0; i < state.count; i++) {
+        if (state.kind[i] === 0 && state.alive[i]) {
+          rel.E0sum += state.E[i];
+          rel.E0n++;
+        }
+      }
+    } else if (name === "plunge") {
+      const primary = relMasses()[0];
+      const M = primary.M;
+      for (let i = 0; i < state.count; i++) {
+        if (state.kind[i] === 1) continue;
+        const r = (8 + (i % 12) * 0.7) * M;
+        const ang = (i * 0.7) % (Math.PI * 2);
+        state.x[i] = primary.x + Math.cos(ang) * r;
+        state.y[i] = primary.y + Math.sin(ang) * r;
+        const el = circularEL(r, M);
+        state.E[i] = el.E * 0.9;
+        state.L[i] = el.L * (0.35 + (i % 7) * 0.08);
+        state.urSign[i] = -1;
+        state.alive[i] = 1;
+      }
+    }
+
+    clearTrails(true);
+    toast(toastMsg);
+  }
+
+  function setFocusUi(on) {
+    state.focusUi = on;
+    document.body.classList.toggle("focus-ui", on);
+    const btn = document.getElementById("btn-focus");
+    if (btn) btn.setAttribute("aria-pressed", on ? "true" : "false");
+  }
+
+  function setSimMode(mode, quiet) {
+    if (mode !== "playground" && mode !== "relativity") return;
+    if (state.simMode === mode) {
+      if (!quiet) toast(mode === "relativity" ? "Relativity mode" : "Playground mode");
+      return;
+    }
+
+    if (mode === "relativity") {
+      // Snapshot playground knobs
+      state.playgroundSnapshot = {
+        count: state.count,
+        friction: state.friction,
+        links: state.links,
+        bloom: state.bloom,
+        cursorField: state.cursorField,
+        trail: state.trail,
+        size: state.size,
+        mode: state.mode,
+        wells: state.geometry.wells.map((w) => ({ ...w })),
+      };
+      state.simMode = "relativity";
+      state.links = false;
+      state.cursorField = false;
+      state.friction = 1;
+      state.trail = 0.045;
+      state.size = 2.0;
+      state.bloom = true;
+      const n = 280;
+      if (state.count !== n) allocParticles(n);
+      // Prefer a clean central mass for science
+      clearGeometry();
+      ensurePrimaryMass();
+      initRelParticles();
+      setFocusUi(true);
+      setInteractionLayer("force", true);
+      clearTrails(true);
+      // Sync UI
+      const countEl = document.getElementById("ctrl-count");
+      if (countEl) {
+        countEl.value = n;
+        countEl.max = 800;
+        countEl.min = 80;
+      }
+      if (els.valCount) els.valCount.textContent = String(n);
+      const linksEl = document.getElementById("ctrl-links");
+      if (linksEl) linksEl.checked = false;
+      const cur = document.getElementById("ctrl-cursor");
+      if (cur) cur.checked = false;
+      const trailEl = document.getElementById("ctrl-trail");
+      if (trailEl) trailEl.value = state.trail;
+      if (els.valTrail) els.valTrail.textContent = state.trail.toFixed(2);
+      const sizeEl = document.getElementById("ctrl-size");
+      if (sizeEl) sizeEl.value = state.size;
+      if (els.valSize) els.valSize.textContent = state.size.toFixed(1);
+      if (!quiet) toast("Relativity — Schwarzschild geodesics · fewer tracers");
+    } else {
+      const snap = state.playgroundSnapshot;
+      state.simMode = "playground";
+      setFocusUi(false);
+      if (snap) {
+        state.friction = snap.friction;
+        state.links = snap.links;
+        state.bloom = snap.bloom;
+        state.cursorField = snap.cursorField;
+        state.trail = snap.trail;
+        state.size = snap.size;
+        if (snap.count !== state.count) allocParticles(snap.count);
+        const countEl = document.getElementById("ctrl-count");
+        if (countEl) {
+          countEl.value = state.count;
+          countEl.max = 4000;
+          countEl.min = 200;
+        }
+        if (els.valCount) els.valCount.textContent = String(state.count);
+        const linksEl = document.getElementById("ctrl-links");
+        if (linksEl) linksEl.checked = state.links;
+        const cur = document.getElementById("ctrl-cursor");
+        if (cur) cur.checked = state.cursorField;
+        scatterParticles("default");
+      } else {
+        const countEl = document.getElementById("ctrl-count");
+        if (countEl) {
+          countEl.max = 4000;
+          countEl.min = 200;
+        }
+        scatterParticles("default");
+      }
+      // Restore alive flags for playground render
+      if (state.alive) state.alive.fill(1);
+      if (!quiet) toast("Playground — forces + rubber-sheet geometry");
+    }
+
+    document.body.dataset.simMode = state.simMode;
+    document.querySelectorAll(".sim-mode-btn").forEach((btn) => {
+      const on = btn.dataset.simMode === state.simMode;
+      btn.classList.toggle("active", on);
+      btn.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    updateHudHint();
+    updateRelStats();
+  }
+
   // ─── Particle system ────────────────────────────────────────────
   function allocParticles(n) {
     state.count = n;
@@ -809,10 +1757,24 @@
     state.vy = new Float32Array(n);
     state.life = new Float32Array(n);
     state.hue = new Uint8Array(n);
-    els.statParticles.textContent = String(n);
+    state.kind = new Uint8Array(n);
+    state.E = new Float32Array(n);
+    state.L = new Float32Array(n);
+    state.urSign = new Int8Array(n);
+    state.gamma = new Float32Array(n);
+    state.alive = new Uint8Array(n);
+    state.gamma.fill(1);
+    state.alive.fill(1);
+    state.urSign.fill(1);
+    if (els.statParticles) els.statParticles.textContent = String(n);
   }
 
   function scatterParticles(preset = "default") {
+    if (state.simMode === "relativity") {
+      initRelParticles();
+      return;
+    }
+
     const { width: w, height: h, count: n } = state;
     const rng = state.rng;
     const cx = w / 2;
@@ -820,6 +1782,9 @@
 
     for (let i = 0; i < n; i++) {
       state.hue[i] = (rng() * 4) | 0;
+      if (state.alive) state.alive[i] = 1;
+      if (state.kind) state.kind[i] = 0;
+      if (state.gamma) state.gamma[i] = 1;
 
       if (preset === "bigbang") {
         const a = rng() * Math.PI * 2;
@@ -864,7 +1829,7 @@
   function setSeed(seed, preset = "default") {
     state.seed = seed;
     state.rng = mulberry32(hashString(seed));
-    els.seedDisplay.textContent = seed;
+    if (els.seedDisplay) els.seedDisplay.textContent = seed;
     scatterParticles(preset);
   }
 
@@ -950,6 +1915,13 @@
   }
 
   function integrate() {
+    if (state.simMode === "relativity") {
+      integrateRelativity();
+      state.mouse.px = state.mouse.x;
+      state.mouse.py = state.mouse.y;
+      return;
+    }
+
     const { count: n, width: w, height: h, friction, mode } = state;
     const mx = state.mouse.x;
     const my = state.mouse.y;
@@ -1037,6 +2009,11 @@
 
   // ─── Render ─────────────────────────────────────────────────────
   function render() {
+    if (state.simMode === "relativity") {
+      renderRelativity();
+      return;
+    }
+
     const { width: w, height: h, count: n, size, trail, bloom, links, mode } = state;
     const colors = PALETTES[state.palette];
 
@@ -1186,17 +2163,25 @@
       state.fps = Math.round((state.frames * 1000) / (ts - state.lastFpsTime));
       state.frames = 0;
       state.lastFpsTime = ts;
-      els.statFps.textContent = String(state.fps);
-      els.statLinks.textContent = String(state.linkCount);
+      if (els.statFps) els.statFps.textContent = String(state.fps);
+      if (els.statLinks) els.statLinks.textContent = String(state.linkCount);
+      if (state.simMode === "relativity") updateRelStats();
     }
 
     // Keep drawing while paused so geometry edits / grid stay visible
     if (!state.paused) {
       state.time = ts * 0.001;
-      integrate();
+      // Fixed-step physics for relativity; playground stays 1 step/frame
+      if (state.simMode === "relativity") {
+        // cap catch-up so tab-switch doesn't explode
+        integrate();
+      } else {
+        integrate();
+      }
       updateAudio();
     }
     render();
+    state.lastFrameTs = ts;
   }
 
   // ─── Audio (procedural ambient) ─────────────────────────────────
@@ -1288,7 +2273,7 @@
 
   function setMode(mode, quiet) {
     state.mode = mode;
-    els.statMode.textContent = mode;
+    if (els.statMode) els.statMode.textContent = mode;
     document.querySelectorAll(".mode-card").forEach((btn) => {
       const active = btn.dataset.mode === mode;
       btn.classList.toggle("active", active);
@@ -1347,6 +2332,12 @@
 
   /** Rescatter particles only — geometry stays */
   function resetField() {
+    if (state.simMode === "relativity") {
+      initRelParticles();
+      clearTrails();
+      toast("Geodesics reseeded");
+      return;
+    }
     setSeed(state.seed, "default");
     clearTrails();
     toast("Particles reset");
@@ -1355,7 +2346,12 @@
   /** Full universe reset: particles + geometry */
   function resetUniverse() {
     clearGeometry();
-    setSeed(state.seed, "default");
+    if (state.simMode === "relativity") {
+      ensurePrimaryMass();
+      initRelParticles();
+    } else {
+      setSeed(state.seed, "default");
+    }
     clearTrails();
     toast("Universe reset");
   }
@@ -1373,6 +2369,7 @@
   function encodeExperimentHash() {
     const parts = [];
     parts.push("s=" + encodeURIComponent(state.seed));
+    parts.push("sim=" + encodeURIComponent(state.simMode));
     parts.push("m=" + encodeURIComponent(state.mode));
     const w = state.width || 1;
     const h = state.height || 1;
@@ -1382,7 +2379,8 @@
         .map((well) => {
           const nx = (well.x / w).toFixed(4);
           const ny = (well.y / h).toFixed(4);
-          return `w:${nx},${ny},${well.mass},${Math.round(well.radius)}`;
+          const Mbit = well.M != null ? `,M${Math.round(well.M)}` : "";
+          return `w:${nx},${ny},${well.mass},${Math.round(well.radius)}${Mbit}`;
         })
         .join(";");
       parts.push("g=" + encodeURIComponent(g));
@@ -1395,6 +2393,7 @@
       "gs:" + state.geometry.strength,
       "sg:" + state.geometry.surfaceG,
       "n:" + state.count,
+      "pf:" + state.rel.photonFraction,
     ].join(",");
     parts.push("p=" + encodeURIComponent(p));
     return "#" + parts.join("&");
@@ -1438,6 +2437,10 @@
       params[decodeURIComponent(pair.slice(0, i))] = decodeURIComponent(pair.slice(i + 1));
     });
 
+    if (params.sim === "relativity" || params.sim === "playground") {
+      setSimMode(params.sim, true);
+    }
+
     if (params.s) {
       setSeed(params.s, "default");
     }
@@ -1453,7 +2456,7 @@
           state.friction = parseFloat(v);
           const el = document.getElementById("ctrl-friction");
           if (el) el.value = state.friction;
-          els.valFriction.textContent = state.friction.toFixed(3);
+          if (els.valFriction) els.valFriction.textContent = state.friction.toFixed(3);
         } else if (k === "c" && v != null) {
           state.cursorField = v === "1";
           const el = document.getElementById("ctrl-cursor");
@@ -1462,7 +2465,7 @@
           state.trail = parseFloat(v);
           const el = document.getElementById("ctrl-trail");
           if (el) el.value = state.trail;
-          els.valTrail.textContent = state.trail.toFixed(2);
+          if (els.valTrail) els.valTrail.textContent = state.trail.toFixed(2);
         } else if (k === "pal" && v && PALETTES[v]) {
           setPalette(v, true);
         } else if (k === "gs" && v != null) {
@@ -1478,14 +2481,22 @@
           const val = document.getElementById("val-surface-g");
           if (val) val.textContent = state.geometry.surfaceG.toFixed(2);
         } else if (k === "n" && v != null) {
-          const n = Math.max(200, Math.min(4000, Math.round(parseFloat(v))));
+          const maxN = state.simMode === "relativity" ? 800 : 4000;
+          const minN = state.simMode === "relativity" ? 80 : 200;
+          const n = Math.max(minN, Math.min(maxN, Math.round(parseFloat(v))));
           if (n !== state.count) {
             allocParticles(n);
             scatterParticles("default");
             const el = document.getElementById("ctrl-count");
             if (el) el.value = n;
-            els.valCount.textContent = String(n);
+            if (els.valCount) els.valCount.textContent = String(n);
           }
+        } else if (k === "pf" && v != null) {
+          state.rel.photonFraction = Math.max(0, Math.min(0.95, parseFloat(v)));
+          const el = document.getElementById("ctrl-photon-frac");
+          if (el) el.value = state.rel.photonFraction;
+          const val = document.getElementById("val-photon-frac");
+          if (val) val.textContent = state.rel.photonFraction.toFixed(2);
         }
       });
     }
@@ -1496,11 +2507,25 @@
       const h = state.height;
       params.g.split(";").forEach((token) => {
         if (!token.startsWith("w:")) return;
-        const nums = token.slice(2).split(",").map(parseFloat);
-        if (nums.length < 4 || nums.some((x) => Number.isNaN(x))) return;
-        placeWell(nums[0] * w, nums[1] * h, nums[2], nums[3], 0, true);
+        const body = token.slice(2);
+        const bits = body.split(",");
+        const nx = parseFloat(bits[0]);
+        const ny = parseFloat(bits[1]);
+        const mass = parseFloat(bits[2]);
+        const radius = parseFloat(bits[3]);
+        if ([nx, ny, mass, radius].some((x) => Number.isNaN(x))) return;
+        let M = null;
+        if (bits[4] && String(bits[4]).startsWith("M")) {
+          M = parseFloat(String(bits[4]).slice(1));
+        }
+        placeWell(nx * w, ny * h, mass, radius, 0, true);
+        if (M != null && state.geometry.wells.length) {
+          const last = state.geometry.wells[state.geometry.wells.length - 1];
+          last.M = M;
+        }
       });
       ensureGeometryBaked();
+      if (state.simMode === "relativity") initRelParticles();
     }
 
     return true;
@@ -1521,8 +2546,13 @@
     ex.font = "12px JetBrains Mono, monospace";
     ex.fillStyle = "rgba(255,255,255,0.35)";
     const wellN = state.geometry.wells.length;
-    const geoNote = wellN ? ` · ${wellN} well${wellN === 1 ? "" : "s"}` : "";
-    ex.fillText(`Nebula · seed ${state.seed}${geoNote}`, 16, state.height - 16);
+    const modeNote =
+      state.simMode === "relativity"
+        ? ` · relativity · γ̄=${state.rel.meanGamma.toFixed(2)}`
+        : wellN
+          ? ` · ${wellN} well${wellN === 1 ? "" : "s"}`
+          : "";
+    ex.fillText(`Nebula · seed ${state.seed}${modeNote}`, 16, state.height - 16);
 
     const link = document.createElement("a");
     link.download = `nebula-${state.seed}.png`;
@@ -1638,9 +2668,22 @@
     els.pauseOverlay.hidden = true;
     state.mouse.inside = true;
     markDiscoverySeen();
+    setSimMode("playground", true);
     applyGeometryPreset("rubber-sheet");
     updateHudHint();
     toast("Rubber Sheet — free-fall on curved space");
+  }
+
+  function enterWithRelativity() {
+    els.splash.classList.add("gone");
+    state.paused = false;
+    els.pauseOverlay.hidden = true;
+    state.mouse.inside = true;
+    markDiscoverySeen();
+    setSimMode("relativity", true);
+    applyRelativityPreset("circular");
+    updateHudHint();
+    toast("Relativity lab — Schwarzschild geodesics");
   }
 
   function togglePause() {
@@ -1804,7 +2847,9 @@
     input.addEventListener("input", () => {
       const v = parseFloat(input.value);
       if (key === "count") {
-        const n = Math.round(v);
+        const maxN = state.simMode === "relativity" ? 800 : 4000;
+        const minN = state.simMode === "relativity" ? 80 : 200;
+        const n = Math.max(minN, Math.min(maxN, Math.round(v)));
         allocParticles(n);
         scatterParticles("default");
         valEl.textContent = String(n);
@@ -1838,6 +2883,7 @@
   // Buttons
   document.getElementById("btn-start").addEventListener("click", enterField);
   document.getElementById("btn-start-rubber")?.addEventListener("click", enterWithRubberSheet);
+  document.getElementById("btn-start-relativity")?.addEventListener("click", enterWithRelativity);
   document.getElementById("btn-help-splash").addEventListener("click", () => showHelp(true));
   document.getElementById("btn-help").addEventListener("click", () => showHelp(true));
   document.getElementById("btn-reset").addEventListener("click", resetField);
@@ -1847,10 +2893,57 @@
   document.getElementById("btn-export").addEventListener("click", exportPng);
   document.getElementById("btn-share")?.addEventListener("click", copyShareLink);
   document.getElementById("btn-fullscreen").addEventListener("click", toggleFullscreen);
+  document.getElementById("btn-focus")?.addEventListener("click", () => setFocusUi(!state.focusUi));
   document.getElementById("btn-sound").addEventListener("click", () => setSound(!state.soundOn));
   document.getElementById("btn-rubber-sheet")?.addEventListener("click", () => {
+    if (state.simMode !== "playground") setSimMode("playground", true);
     applyGeometryPreset("rubber-sheet");
   });
+
+  document.querySelectorAll(".sim-mode-btn").forEach((btn) => {
+    btn.addEventListener("click", () => setSimMode(btn.dataset.simMode));
+  });
+  document.querySelectorAll(".rel-preset-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (state.simMode !== "relativity") setSimMode("relativity", true);
+      applyRelativityPreset(btn.dataset.relpreset);
+    });
+  });
+  const photonFracEl = document.getElementById("ctrl-photon-frac");
+  if (photonFracEl) {
+    photonFracEl.addEventListener("input", (e) => {
+      state.rel.photonFraction = parseFloat(e.target.value);
+      const val = document.getElementById("val-photon-frac");
+      if (val) val.textContent = state.rel.photonFraction.toFixed(2);
+    });
+  }
+  const relMassEl = document.getElementById("ctrl-rel-mass");
+  if (relMassEl) {
+    relMassEl.addEventListener("input", (e) => {
+      const M = parseFloat(e.target.value);
+      state.rel.defaultM = M;
+      state.geometry.wellMass = M / state.rel.massScale;
+      const val = document.getElementById("val-rel-mass");
+      if (val) val.textContent = String(Math.round(M));
+      // Update primary mass in place if single well
+      if (state.simMode === "relativity" && state.geometry.wells.length === 1) {
+        const w0 = state.geometry.wells[0];
+        w0.M = M;
+        w0.mass = M / state.rel.massScale;
+        w0.radius = Math.max(50, M * 3);
+        initRelParticles();
+        clearTrails(true);
+      }
+    });
+  }
+  const dtEl = document.getElementById("ctrl-rel-dt");
+  if (dtEl) {
+    dtEl.addEventListener("input", (e) => {
+      state.rel.dt = parseFloat(e.target.value);
+      const val = document.getElementById("val-rel-dt");
+      if (val) val.textContent = state.rel.dt.toFixed(2);
+    });
+  }
   document.getElementById("btn-discovery-next")?.addEventListener("click", () => {
     if (discoveryIndex >= discoverySteps.length - 1) endDiscovery();
     else showDiscoveryStep(discoveryIndex + 1);
@@ -1992,26 +3085,42 @@
           state.geometry.interaction === "force" ? "geometry" : "force"
         );
         break;
+      case "p":
+        setSimMode(state.simMode === "relativity" ? "playground" : "relativity");
+        break;
+      case "\\":
+        setFocusUi(!state.focusUi);
+        toast(state.focusUi ? "Focus UI — panels hidden" : "Panels visible");
+        break;
       case "m":
-        state.geometry.showGrid = !state.geometry.showGrid;
-        document.getElementById("ctrl-show-grid").checked = state.geometry.showGrid;
-        toast(state.geometry.showGrid ? "Metric grid on" : "Metric grid off");
+        if (state.simMode === "relativity") {
+          state.rel.showEquipotentials = !state.rel.showEquipotentials;
+          toast(state.rel.showEquipotentials ? "Equipotentials on" : "Equipotentials off");
+        } else {
+          state.geometry.showGrid = !state.geometry.showGrid;
+          document.getElementById("ctrl-show-grid").checked = state.geometry.showGrid;
+          toast(state.geometry.showGrid ? "Metric grid on" : "Metric grid off");
+        }
         break;
       case "x":
         clearGeometry();
+        if (state.simMode === "relativity") {
+          ensurePrimaryMass();
+          initRelParticles();
+        }
         toast("Geometry cleared");
         break;
       case "7":
         setGeometryTool("well");
         break;
       case "8":
-        setGeometryTool("paint-down");
+        if (state.simMode === "playground") setGeometryTool("paint-down");
         break;
       case "9":
-        setGeometryTool("paint-up");
+        if (state.simMode === "playground") setGeometryTool("paint-up");
         break;
       case "0":
-        setGeometryTool("erase");
+        if (state.simMode === "playground") setGeometryTool("erase");
         break;
     }
   });
@@ -2021,7 +3130,7 @@
   allocParticles(state.count);
   setSeed(state.seed, "galaxy");
   state.mode = "orbit";
-  els.statMode.textContent = "orbit";
+  if (els.statMode) els.statMode.textContent = "orbit";
   document.querySelectorAll(".mode-card").forEach((btn) => {
     const active = btn.dataset.mode === "orbit";
     btn.classList.toggle("active", active);
@@ -2032,6 +3141,7 @@
   state.mouse.y = state.height * 0.45;
   state.mouse.inside = true;
   state.started = true;
+  document.body.dataset.simMode = state.simMode;
   updateHudHint();
 
   // Shared experiment from URL (after canvas sized)
